@@ -1,7 +1,5 @@
 <?php
-  
  
-  
 	require_once(CORE . '/class.cacheable.php');
 	require_once(EXTENSIONS . '/maplocationfield/extension.driver.php');
 
@@ -75,7 +73,7 @@
 
 				$ch = new Gateway;
 				$ch->init();
-				$ch->setopt('URL', 'http://maps.googleapis.com/maps/api/geocode/json?address='.urlencode($address).'&key='.$this->_api_key);
+				$ch->setopt('URL', 'https://maps.googleapis.com/maps/api/geocode/json?address='.urlencode($address).'&key='.$this->_api_key);
 				$response = json_decode($ch->exec());
 
 				$coordinates = $response->results[0]->geometry->location;
@@ -151,7 +149,7 @@
 
 		public function displayPublishPanel(&$wrapper, $data=NULL, $flagWithError=NULL, $fieldnamePrefix=NULL, $fieldnamePostfix=NULL, $entry_id=NULL){
 			if (class_exists('Administration') && Administration::instance()->Page) {
-				Administration::instance()->Page->addScriptToHead('http://maps.google.com/maps/api/js?key=' . $this->_api_key, 79);
+				Administration::instance()->Page->addScriptToHead('https://maps.google.com/maps/api/js?key=' . $this->_api_key, 79);
 				Administration::instance()->Page->addStylesheetToHead(URL . '/extensions/maplocationfield/assets/maplocationfield.publish.css', 'screen', 78);
 				Administration::instance()->Page->addScriptToHead(URL . '/extensions/maplocationfield/assets/maplocationfield.publish.js', 80);
 			}
@@ -244,7 +242,7 @@
 			if ($zoom < 1) $zoom = 1;
 
 			return sprintf(
-				"<img src='http://maps.google.com/maps/api/staticmap?center=%s&zoom=%d&size=160x90&key=".$this->_api_key."&markers=color:red|size:small|%s' alt=''/>",
+				"<img src='https://maps.google.com/maps/api/staticmap?center=%s&zoom=%d&size=160x90&key=".$this->_api_key."&markers=color:red|size:small|%s' alt=''/>",
 				$data['centre'],
 				$zoom,
 				implode(',', array($data['latitude'], $data['longitude']))
