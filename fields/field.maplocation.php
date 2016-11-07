@@ -5,15 +5,14 @@
 
 	Class fieldMapLocation extends Field{
 	
-	  // your API key here
-    private $_api_key = '';
-
 		private $_geocode_cache_expire = 60; // minutes
 
 		// defaults used when user doesn't enter defaults when adding field to section
 		private $_default_location = 'London, England';
 		private $_default_coordinates = '51.58129468879224, -0.554702996875005'; // London, England
 		private $_default_zoom = 3;
+
+    //private $zoom = $this->get('default_zoom');
 
 		private $_filter_origin = array();
 
@@ -38,7 +37,7 @@
 		Setup:
 	-------------------------------------------------------------------------*/
 
-		public function createTable(){
+    public function createTable(){
 			return Symphony::Database()->query(
 				"CREATE TABLE IF NOT EXISTS `tbl_entries_data_" . $this->get('id') . "` (
 				  `id` int(11) unsigned NOT NULL auto_increment,
@@ -51,8 +50,8 @@
 				  KEY `entry_id` (`entry_id`),
 				  KEY `latitude` (`latitude`),
 				  KEY `longitude` (`longitude`)
-				) TYPE=MyISAM;"
-			);
+				) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+			");
 		}
 
 	/*-------------------------------------------------------------------------
@@ -68,18 +67,23 @@
 
 			// no data has been cached
 			if(!$cachedData) {
-
 				include_once(TOOLKIT . '/class.gateway.php');
 
 				$ch = new Gateway;
 				$ch->init();
-				$ch->setopt('URL', 'https://maps.googleapis.com/maps/api/geocode/json?address='.urlencode($address).'&key='.$this->_api_key);
+				$ch->setopt('URL', 'https://maps.googleapis.com/maps/api/geocode/json?address='.urlencode($address).'&key='.$this->get('api_key'));
 				$response = json_decode($ch->exec());
 
-				$coordinates = $response->results[0]->geometry->location;
+				if($response->status === 'OK') {
+					$coordinates = $response->results[0]->geometry->location;
+				}
+				else {
+					return false;
+				}
 
 				if ($coordinates && is_object($coordinates)) {
-					$cache->write($cache_id, $coordinates->lat . ', ' . $coordinates->lng, $this->_geocode_cache_expire); // cache lifetime in minutes
+					// cache lifetime in minutes
+					$cache->write($cache_id, $coordinates->lat . ', ' . $coordinates->lng, $this->_geocode_cache_expire);
 				}
 
 			}
@@ -97,7 +101,7 @@
 				return $coordinates;
 			}
 			// return default coordinates
-			elseif ($return_default) {
+			elseif ($can_return_default) {
 				return $this->_default_coordinates;
 			}
 		}
@@ -116,6 +120,10 @@
 			$label = Widget::Label('Default Zoom Level');
 			$label->appendChild(Widget::Input('fields['.$this->get('sortorder').'][default_zoom]', $this->get('default_zoom')));
 			$wrapper->appendChild($label);
+			
+			$label = Widget::Label('Google Maps API Key');
+			$label->appendChild(Widget::Input('fields['.$this->get('sortorder').'][api_key]', $this->get('api_key')));
+			$wrapper->appendChild($label);
 
 			$this->appendShowColumnCheckbox($wrapper);
 		}
@@ -132,15 +140,16 @@
 			$fields['field_id'] = $id;
 			$fields['default_location'] = $this->get('default_location');
 			$fields['default_zoom'] = $this->get('default_zoom');
+			$fields['api_key'] = $this->get('api_key');
 
 			if(!$fields['default_location']) $fields['default_location'] = $this->_default_location;
 			$fields['default_location_coords'] = self::__geocodeAddress($fields['default_location']);
 
 			if(!$fields['default_zoom']) $fields['default_zoom'] = $this->_default_zoom;
+			
+			if(!$fields['api_key']) $fields['api_key'] = $this->get('api_key');
 
-			Symphony::Database()->query("DELETE FROM `tbl_fields_".$this->handle()."` WHERE `field_id` = '$id' LIMIT 1");
-
-			return Symphony::Database()->insert($fields, 'tbl_fields_' . $this->handle());
+			return FieldManager::saveSettings($id, $fields);
 		}
 
 	/*-------------------------------------------------------------------------
@@ -149,7 +158,7 @@
 
 		public function displayPublishPanel(&$wrapper, $data=NULL, $flagWithError=NULL, $fieldnamePrefix=NULL, $fieldnamePostfix=NULL, $entry_id=NULL){
 			if (class_exists('Administration') && Administration::instance()->Page) {
-				Administration::instance()->Page->addScriptToHead('https://maps.google.com/maps/api/js?key=' . $this->_api_key, 79);
+				Administration::instance()->Page->addScriptToHead('https://maps.google.com/maps/api/js?key=' . $this->get('api_key'), 79);
 				Administration::instance()->Page->addStylesheetToHead(URL . '/extensions/maplocationfield/assets/maplocationfield.publish.css', 'screen', 78);
 				Administration::instance()->Page->addScriptToHead(URL . '/extensions/maplocationfield/assets/maplocationfield.publish.js', 80);
 			}
@@ -180,11 +189,11 @@
 			$wrapper->appendChild($label);
 		}
 
-		public function processRawFieldData($data, &$status, $simulate=false, $entry_id=NULL){
+		public function processRawFieldData($data, &$status, &$message=null, $simulate=false, $entry_id = null){
 			$status = self::__OK__;
 
 			if (is_array($data)) {
-				$coordinates = split(',', $data['coordinates']);
+				$coordinates = explode(',', $data['coordinates']);
 				return array(
 					'latitude' => trim($coordinates[0]),
 					'longitude' => trim($coordinates[1]),
@@ -198,7 +207,7 @@
 					$data = self::__geocodeAddress($data);
 				}
 
-				$coordinates = split(',', $data);
+				$coordinates = explode(',', $data);
 				return array(
 					'latitude' => trim($coordinates[0]),
 					'longitude' => trim($coordinates[1]),
@@ -212,27 +221,33 @@
 		Output:
 	-------------------------------------------------------------------------*/
 
-		public function appendFormattedElement(&$wrapper, $data, $encode = false, $mode = null, $entry_id = null) {
+		public function appendFormattedElement(XMLElement &$wrapper, $data, $encode = false, $mode = null, $entry_id = null){
 			$field = new XMLElement($this->get('element_name'), null, array(
 				'latitude' => $data['latitude'],
 				'longitude' => $data['longitude'],
 			));
 
-// 			$map = new XMLElement('map', null, array(
-// 				'zoom' => $data['zoom'],
-// 				'centre' => $data['centre']
-// 			));
-// 			$field->appendChild($map);
+			$map = new XMLElement('map', null, array(
+				'zoom' => $data['zoom'],
+				'centre' => $data['centre']
+			));
+			$field->appendChild($map);
 
-// 			if (count($this->_filter_origin['latitude']) > 0) {
-// 				$distance = new XMLElement('distance');
-// 				$distance->setAttribute('from', $this->_filter_origin['latitude'] . ',' . $this->_filter_origin['longitude']);
-// 				$distance->setAttribute('distance', extension_maplocationfield::geoDistance($this->_filter_origin['latitude'], $this->_filter_origin['longitude'], $data['latitude'], $data['longitude'], $this->_filter_origin['unit']));
-// 				$distance->setAttribute('unit', ($this->_filter_origin['unit'] == 'k') ? 'km' : 'miles');
-// 				$field->appendChild($distance);
-// 			}
+			if (count($this->_filter_origin['latitude']) > 0) {
+				$distance = new XMLElement('distance');
+				$distance->setAttribute('from', $this->_filter_origin['latitude'] . ',' . $this->_filter_origin['longitude']);
+				$distance->setAttribute('distance', extension_maplocationfield::geoDistance($this->_filter_origin['latitude'], $this->_filter_origin['longitude'], $data['latitude'], $data['longitude'], $this->_filter_origin['unit']));
+				$distance->setAttribute('unit', ($this->_filter_origin['unit'] == 'k') ? 'km' : 'miles');
+				$field->appendChild($distance);
+			}
 
 			$wrapper->appendChild($field);
+		}
+
+		public function prepareReadableValue($data, $entry_id = null, $truncate = false, $defaultValue = null) {
+			if(isset($data['latitude'])) {
+				return $data['latitude'] . ',' . $data['longitude'];
+			}
 		}
 
 		public function prepareTableValue($data, XMLElement $link = null, $entry_id = null) {
@@ -241,12 +256,16 @@
 			$zoom = (int)$data['zoom'] - 2;
 			if ($zoom < 1) $zoom = 1;
 
-			return sprintf(
-				"<img src='https://maps.google.com/maps/api/staticmap?center=%s&zoom=%d&size=160x90&key=".$this->_api_key."&markers=color:red|size:small|%s' alt=''/>",
+			$thumbnail = sprintf(
+				"<img src='https://maps.google.com/maps/api/staticmap?center=%s&zoom=%d&size=160x90&key=".$this->get('api_key')."&markers=color:red|size:small|%s' alt=''/>",
 				$data['centre'],
 				$zoom,
 				implode(',', array($data['latitude'], $data['longitude']))
 			);
+			if (null !== $link) {
+				return sprintf('<a href="%s">%s</a>', $link->getAttribute('href'), $thumbnail);
+			}
+			return $thumbnail;
 		}
 
 	/*-------------------------------------------------------------------------
