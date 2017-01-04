@@ -24,6 +24,9 @@
 		<item type="image" url="http://symphonyextensions.com/nickdunn/maplocationfield/media/maplocationfield.png">Map Location Field: Plot locations on a Google Map. Supports address geocoding.</item>
 	</media>
 	<releases>
+	  <release version="3.4.2" date="2017-01-04" min="2.3.x">
+			- fix for missing column on fresh install
+		</release>
     <release version="3.4.1" date="2016-11-07" min="2.3.x">
 			- localisation for german/french/norwegian
 		</release>
